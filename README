@@ -1,0 +1,89 @@
+Roadsend PHP Test Suite
+-----------------------
+
+dotest will read a single test (with -f), or recurse into a given directory
+(with -d) to pull all test templates (*.phpt). The template format is similar
+to that from the main Zend test suite, but with added sections for Roadsend PHP
+specific functionality and options.
+
+
+TEST TEMPLATE FORMAT
+--------------------
+
+A "section" starts with a single line of input thus:
+
+--SECTIONAME--
+
+It sends when the next section starts, or the file ends. The section name may
+consist of only letters, numbers, or a colon. The current list of recognized
+sections is listed below.
+
+INFORMATION sections
+--------------------
+
+ - TEST
+
+    A (brief) description of the test being run
+
+DATA sections
+-------------
+
+ - FILE
+
+    The actual PHP source code of the test
+
+EXPECT sections
+---------------
+ - EXPECT
+ - EXPECTF
+ - EXPECTREGEX
+
+    All of these sections describe the output to expect upon running the source
+    given in the TEST section.
+
+    EXPECT will match against the literal output
+
+    EXPECTF will use the "simple" regex mode. The following tokens are available:
+
+      %s - match any string until newline
+      %a - match anything
+      %w - match whitespace (if any)
+      %i - match a (possibly signed) string of digits (integer)
+      %d - match a string of digits
+      %e - match directory separator
+      %x - match a string of hex digits
+      %f - match a float
+      %c - match any single character
+
+    EXPECTREGEX will use preg_match to match the entire contents of this section
+    against the output
+
+    COMPILER SPECIFIC EXPECT SECTIONS
+    ---------------------------------
+
+  - BUILDFAILEXPECTF
+
+    This tells the test suite to expect this test to fail to build. This is needed
+    because some errors we want to catch at compile time, rather than run time.
+    It requires the COMPILER: prefix (described below). The section should contain
+    EXPECTF data that will be matched against the stderr output from the build process.
+
+    SPECIAL EXPECT MODIFIERS
+    ------------------------
+    In addition, the 3 expect sections above may appear with a prefix or suffix
+    as follows:
+
+    :32
+    :64
+
+       When one of the expect sections is suffixed with ":32" or ":64", it will
+       only be applied if the current architecture corresponds to the given
+       word size (i.e. the :64 version is used on x86-64 platforms)
+
+    COMPILER:
+
+       If an expect section is prefixed with "COMPILER:", it will be used as
+       expect output only for the compiler (not the interpreter) run. Note that
+       a normal EXPECT section _must_ also be available for the interpreter to
+       match against (and which has no prefix).
+
