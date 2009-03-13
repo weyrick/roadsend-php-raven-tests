@@ -35,7 +35,7 @@ class Control {
     static public $rphpBinary;
     static public $rphpiBinary;
     static public $rphpVersion;
-    static public $doCompiled = false;
+    static public $doCompiled = true;
     static public $testRoot;
     static public $outDir;
     static public $singleMode = false;
