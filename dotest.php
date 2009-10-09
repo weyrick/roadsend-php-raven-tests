@@ -33,7 +33,7 @@ class Control {
     static public $useColor = true;
     static public $verbosity = 1;
     static public $rphpBinary;
-    static public $rphpiBinary;
+//    static public $rphpiBinary;
     static public $rphpVersion;
     static public $doCompiled = true;
     static public $testRoot;
@@ -49,21 +49,21 @@ class Control {
         if (getenv('RPHP_BINARY')) {
             self::$rphpBinary = trim(getenv('RPHP_BINARY'));
         }
-        if (getenv('RPHPI_BINARY')) {
-            self::$rphpiBinary = trim(getenv('RPHPI_BINARY'));
-        }
-        if (empty(self::$rphpBinary) || empty(self::$rphpiBinary)) {
+//        if (getenv('RPHPI_BINARY')) {
+//            self::$rphpiBinary = trim(getenv('RPHPI_BINARY'));
+//        }
+        if (empty(self::$rphpBinary) /*|| empty(self::$rphpiBinary)*/) {
             // XXX non portable, find a better way to do this
             $b = `which rphp`;
             if (!empty($b)) {
                 self::$rphpBinary = trim($b);
             }
-            $b = `which rphpi`;
-            if (!empty($b)) {
-                self::$rphpiBinary = trim($b);
-            }
-            if (empty(self::$rphpBinary) || empty(self::$rphpiBinary)) {
-                self::bomb('Unable to find rphp binary. Try setting RPHP_BINARY and RPHPI_BINARY or putting rphp in the PATH');
+//            $b = `which rphpi`;
+//            if (!empty($b)) {
+//                self::$rphpiBinary = trim($b);
+//            }
+            if (empty(self::$rphpBinary) /*|| empty(self::$rphpiBinary)*/) {
+                self::bomb('Unable to find rphp binary. Try setting RPHP_BINARY or putting rphp in the PATH');
             }
         }
 
@@ -350,7 +350,7 @@ class PHP_Test {
             // XXX do zend command here
             }
             */
-            $cmd = Control::$rphpiBinary.' '.$this->testFileName;
+            $cmd = Control::$rphpBinary.' -f '.$this->testFileName;
 
             // setup output vars
             $output =& $this->iOutput;
