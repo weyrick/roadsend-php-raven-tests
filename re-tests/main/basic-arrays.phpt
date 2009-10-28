@@ -27,6 +27,6 @@ array(1) {
   unicode(4) "five"
 }
 array(1) {
-  [u'five']=>
+  [u"five"]=>
   int(5)
 }
