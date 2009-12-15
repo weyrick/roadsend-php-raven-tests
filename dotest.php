@@ -27,6 +27,7 @@
 
 class Control {
 
+    const BLUE = 34;
     const GREEN = 32;
     const RED = 31;
 
@@ -39,6 +40,7 @@ class Control {
     static public $testRoot;
     static public $outDir;
     static public $singleMode = false;
+    static public $parseOnly = false;
     
     public static function log($level, $msg) {
         if (self::$verbosity >= $level)
@@ -95,7 +97,8 @@ class TestSuite {
     
     public function usage() {
         echo "Roadsend PHP Test Suite\n";
-        echo "dotest [-dfl] <directory or file> [output directory]\n";
+        echo "dotest [--parseonly] [-dfl] <directory or file> [output directory]\n";
+        echo "  --parseonly\t\tRun parser (AST dump) tests only, no runtime\n";
         echo "  -d <path>\t\tRun all tests in the specified root directory\n";
         echo "  -f <file>\t\tRun the single test specified\n";
         echo "  -l <file>\t\tRun all tests listed in the specified file\n";
@@ -124,6 +127,12 @@ class TestSuite {
     }
 
     public function run() {
+
+        if ($GLOBALS['argv'][1] == '--parseonly') {
+            Control::$parseOnly = true;
+            Control::$doCompiled = false;
+            array_splice($GLOBALS['argv'],1,1);
+        }
 
         if (($GLOBALS['argc'] < 3) ||
            (!preg_match('/^-([dfl])$/',$GLOBALS['argv'][1]))) {
@@ -181,8 +190,13 @@ class TestSuite {
                 echo "{$testH->tptFileName}\n";
                 if (isset($testH->sectionData['KNOWNFAILURE']))
                     echo "--- KNOWN FAILURE:\n".$testH->sectionData['KNOWNFAILURE']."---\n";
-                if (Control::$singleMode)
+                if (Control::$singleMode) {
                     echo $testH->iDiffOutput;
+                    if (filesize($testH->ierrFileName)) {
+                        echo "--- ERROR OUTPUT ---\n";
+                        echo file_get_contents($testH->ierrFileName);
+                    }
+                }
             }
         }
         if (sizeof($bFail)) {
@@ -333,12 +347,19 @@ class PHP_Test {
         if (!file_put_contents($this->testFileName, $this->sectionData['FILE']))
             Control::bomb("unable to write .php test file (FILE section): ".$this->testFileName);
         
-        if (!file_put_contents($this->expectFileName, $this->sectionData[$this->expectType]))
+        
+        if (!file_put_contents($this->expectFileName, $this->getExpectdata()))
             Control::bomb("unable to write expect test file ({$this->expectType} section): ".$this->expectFileName);
         
     }
 
     protected function executeTest($type) {
+
+        if (Control::$parseOnly && !isset($this->sectionData['EXPECTPARSE'])) {
+            $this->interpretResult = PHP_Test::RESULT_SKIP;
+            $this->compileResult = PHP_Test::RESULT_SKIP;
+            return;
+        }
 
         if ($type == self::INTERPRETER) {
             
@@ -350,7 +371,13 @@ class PHP_Test {
             // XXX do zend command here
             }
             */
-            $cmd = Control::$rphpBinary.' -f '.$this->testFileName;
+            if (Control::$parseOnly) {
+                $opt = '--dump-ast';
+            }
+            else {
+                $opt = '-f';
+            }
+            $cmd = Control::$rphpBinary.' '.$opt.' '.$this->testFileName;
 
             // setup output vars
             $output =& $this->iOutput;
@@ -389,18 +416,15 @@ class PHP_Test {
         $return_value = proc_close($process);
         $output = trim($output);
 
-        if (!file_put_contents($outFileName, $output))
-            Control::bomb("unable to write output file: ".$outFileName);
-
-        // get the correct expect data for this run
-        if (($type == self::COMPILER) && (isset($this->sectionData['COMPILER:'.$this->expectType]))) {
-            $expectData = $this->sectionData['COMPILER:'.$this->expectType];
+        if ($output) {
+            if (!file_put_contents($outFileName, $output))
+                Control::bomb("unable to write output file: ".$outFileName);
         }
         else {
-            $expectData = $this->sectionData[$this->expectType];
+            touch($outFileName);
         }
 
-        $result = $this->compareOutput($this->expectType, $expectData, $output);
+        $result = $this->compareOutput($output);
         if ($type == self::INTERPRETER)
             $this->interpretResult = $result;
         else
@@ -408,7 +432,10 @@ class PHP_Test {
         
     }
 
-    protected function compareOutput($expectType, $expectData, $output) {
+    protected function compareOutput($output) {
+    
+        $expectType = $this->expectType;
+        $expectData = $this->getExpectData();
     
         // compare output
         if ($expectType != 'EXPECT')
@@ -445,6 +472,21 @@ class PHP_Test {
 
         return $result;
         
+    }
+
+    protected function getExpectData() {
+        
+        if (($type == self::COMPILER) && (isset($this->sectionData['COMPILER:'.$this->expectType]))) {
+            $expectData = $this->sectionData['COMPILER:'.$this->expectType];
+        }
+        elseif (Control::$parseOnly) {
+            $expectData = $this->sectionData['EXPECTPARSE'];
+        }
+        else {
+            $expectData = $this->sectionData[$this->expectType];
+        }
+        
+        return $expectData;
     }
     
     protected function writeDiff($type) {
@@ -542,12 +584,21 @@ class PHP_Test {
         // do interpreter test
         $this->executeTest(self::INTERPRETER);
 
-        if ($this->interpretResult == self::RESULT_FAIL)
+        if ($this->interpretResult == self::RESULT_FAIL) {
             $this->writeDiff(self::INTERPRETER);
+        }
 
-        echo ($this->interpretResult == self::RESULT_PASS) ?
-                Control::colorMsg(Control::GREEN,"PASS ") :
+        switch ($this->interpretResult) {
+            case self::RESULT_PASS:
+                Control::colorMsg(Control::GREEN,"PASS ");
+                break;
+            case self::RESULT_FAIL:
                 Control::colorMsg(Control::RED,"FAIL ");
+                break;
+            case self::RESULT_SKIP:
+                Control::colorMsg(Control::BLUE,"SKIP ");
+                break;
+        }
         
         // do compiled test
         if (Control::$doCompiled) {
