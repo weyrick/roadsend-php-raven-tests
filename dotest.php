@@ -348,8 +348,9 @@ class PHP_Test {
             Control::bomb("unable to write .php test file (FILE section): ".$this->testFileName);
         
         
-        if (!file_put_contents($this->expectFileName, $this->getExpectdata()))
-            Control::bomb("unable to write expect test file ({$this->expectType} section): ".$this->expectFileName);
+        if (!file_put_contents($this->expectFileName, $this->getExpectData())) {
+            touch($this->expectFileName);
+        } 
         
     }
 
