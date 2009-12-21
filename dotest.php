@@ -34,7 +34,7 @@ class Control {
     static public $useColor = true;
     static public $verbosity = 1;
     static public $rphpBinary;
-//    static public $rphpiBinary;
+    static public $rphpABinary;
     static public $rphpVersion;
     static public $doCompiled = true;
     static public $testRoot;
@@ -51,21 +51,21 @@ class Control {
         if (getenv('RPHP_BINARY')) {
             self::$rphpBinary = trim(getenv('RPHP_BINARY'));
         }
-//        if (getenv('RPHPI_BINARY')) {
-//            self::$rphpiBinary = trim(getenv('RPHPI_BINARY'));
-//        }
-        if (empty(self::$rphpBinary) /*|| empty(self::$rphpiBinary)*/) {
+        if (getenv('RPHP_ANALYZER_BINARY')) {
+            self::$rphpABinary = trim(getenv('RPHP_ANALYZER_BINARY'));
+        }
+        if (empty(self::$rphpBinary) || empty(self::$rphpABinary)) {
             // XXX non portable, find a better way to do this
             $b = `which rphp`;
             if (!empty($b)) {
                 self::$rphpBinary = trim($b);
             }
-//            $b = `which rphpi`;
-//            if (!empty($b)) {
-//                self::$rphpiBinary = trim($b);
-//            }
-            if (empty(self::$rphpBinary) /*|| empty(self::$rphpiBinary)*/) {
-                self::bomb('Unable to find rphp binary. Try setting RPHP_BINARY or putting rphp in the PATH');
+            $b = `which rphp-analyzer`;
+            if (!empty($b)) {
+                self::$rphpABinary = trim($b);
+            }
+            if (empty(self::$rphpBinary) || empty(self::$rphpABinary)) {
+                self::bomb('Unable to find rphp binaries (rphp,rphp-analyze). Try setting RPHP_BINARY and RPHP_ANALYZER_BINARY or putting rphp in the PATH');
             }
         }
 
@@ -373,12 +373,11 @@ class PHP_Test {
             }
             */
             if (Control::$parseOnly) {
-                $opt = '--dump-ast';
+                $cmd = Control::$rphpABinary.' --dump-ast '.$this->testFileName;
             }
             else {
-                $opt = '-f';
+                $cmd = Control::$rphpBinary.' -f '.$this->testFileName;
             }
-            $cmd = Control::$rphpBinary.' '.$opt.' '.$this->testFileName;
 
             // setup output vars
             $output =& $this->iOutput;
