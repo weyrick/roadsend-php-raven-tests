@@ -28,8 +28,6 @@ $ary = array(1,2,3);
 var_dump($ary);
 
 ?>
---EXPECTPARSE--
-foo
 --EXPECT--
 NULL
 bool(true)

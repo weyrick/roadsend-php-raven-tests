@@ -2,7 +2,7 @@
 
 /* ***** BEGIN LICENSE BLOCK *****
  * Roadsend PHP Compiler
- * Copyright (C) 2009 Shannon Weyrick
+ * Copyright (C) 2009-2010 Shannon Weyrick
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public License
@@ -35,12 +35,10 @@ class Control {
     static public $verbosity = 1;
     static public $rphpBinary;
     static public $rphpABinary;
-    static public $rphpVersion;
-    static public $doCompiled = true;
+    static public $rphpVersion;    
     static public $testRoot;
     static public $outDir;
     static public $singleMode = false;
-    static public $parseOnly = false;
     
     public static function log($level, $msg) {
         if (self::$verbosity >= $level)
@@ -65,7 +63,7 @@ class Control {
                 self::$rphpABinary = trim($b);
             }
             if (empty(self::$rphpBinary) || empty(self::$rphpABinary)) {
-                self::bomb('Unable to find rphp binaries (rphp,rphp-analyze). Try setting RPHP_BINARY and RPHP_ANALYZER_BINARY or putting rphp in the PATH');
+                self::bomb('Unable to find rphp binaries (rphp,rphp-analyzer). Try setting RPHP_BINARY and RPHP_ANALYZER_BINARY or putting rphp in the PATH');
             }
         }
 
@@ -97,11 +95,9 @@ class TestSuite {
     
     public function usage() {
         echo "Roadsend PHP Test Suite\n";
-        echo "dotest [--parseonly] [-dfl] <directory or file> [output directory]\n";
-        echo "  --parseonly\t\tRun parser (AST dump) tests only, no runtime\n";
+        echo "dotest [-df] <directory or file> [output directory]\n";
         echo "  -d <path>\t\tRun all tests in the specified root directory\n";
         echo "  -f <file>\t\tRun the single test specified\n";
-        echo "  -l <file>\t\tRun all tests listed in the specified file\n";
         die("\n");
     }
     
@@ -127,12 +123,6 @@ class TestSuite {
     }
 
     public function run() {
-
-        if ($GLOBALS['argv'][1] == '--parseonly') {
-            Control::$parseOnly = true;
-            Control::$doCompiled = false;
-            array_splice($GLOBALS['argv'],1,1);
-        }
 
         if (($GLOBALS['argc'] < 3) ||
            (!preg_match('/^-([dfl])$/',$GLOBALS['argv'][1]))) {
@@ -174,6 +164,8 @@ class TestSuite {
     }
 
     public function showResults() {
+        
+        $allPassed = true;
         foreach ($this->testList as $testH) {
             if ($testH->interpretResult == PHP_Test::RESULT_FAIL)
                 $iFail[] = $testH;
@@ -183,52 +175,40 @@ class TestSuite {
                 $bFailFail[] = $testH;
             if ($testH->compileResult == PHP_Test::RESULT_FAIL)
                 $cFail[] = $testH;
+            if ($testH->parseResult == PHP_Test::RESULT_FAIL)
+                $pFail[] = $testH;
         }
-        if (sizeof($iFail)) {
-            echo "------------- INTERPRETER FAILURES -------------\n";
-            foreach ($iFail as $testH) {
+        if (sizeof($iFail)||sizeof($bFail)||sizeof($bFailFail)||sizeof($cFail)||sizeof($pFail))
+            $allPassed = false;
+
+        $this->showResultList('INTERPRETER', $iFail, $testH->iDiffOutput, $testH->ierrFileName);
+        $this->showResultList('BUILD', $bFail, $testH->builtOutput, $testH->buildErrFileName);
+        $this->showResultList('EXPECTED BUILD FAIL', $bFailFail, $testH->builtOutput, $testH->buildErrFileName);
+        $this->showResultList('COMPILED RUN', $cFail, $testH->cDiffOutput);
+        $this->showResultList('PARSE', $pFail, $testH->pDiffOutput);
+        
+        if ($allPassed)
+            echo "---- ALL TESTS PASSED ----\n";
+    }
+
+    public function showResultList($msg, $fails, $singleExtra=NULL, $extraFile=NULL) {
+        if (sizeof($fails)) {
+            echo "------------- $msg FAILURES -------------\n";
+            foreach ($fails as $testH) {
                 echo "{$testH->tptFileName}\n";
                 if (isset($testH->sectionData['KNOWNFAILURE']))
                     echo "--- KNOWN FAILURE:\n".$testH->sectionData['KNOWNFAILURE']."---\n";
                 if (Control::$singleMode) {
-                    echo $testH->iDiffOutput;
-                    if (filesize($testH->ierrFileName)) {
+                    if ($singleExtra) {
+                        echo $singleExtra;
+                    }
+                    if ($extraFile && file_exists($extraFile)) {
                         echo "--- ERROR OUTPUT ---\n";
-                        echo file_get_contents($testH->ierrFileName);
+                        echo file_get_contents($extraFile);
                     }
                 }
             }
         }
-        if (sizeof($bFail)) {
-            echo "------------- BUILD FAILURES -------------\n";
-            foreach ($bFail as $testH) {
-                echo "{$testH->tptFileName}\n";
-                if (Control::$singleMode) {
-                    echo $testH->buildOutput;
-                    echo file_get_contents($testH->buildErrFileName);
-                }
-            }
-        }
-        if (sizeof($bFailFail)) {
-            echo "------------- EXPECTED BUILD FAIL FAILURES -------------\n";
-            foreach ($bFailFail as $testH) {
-                echo "{$testH->tptFileName}\n";
-                if (Control::$singleMode) {
-                    echo $testH->buildOutput;
-                    echo file_get_contents($testH->buildErrFileName);
-                }
-            }
-        }
-        if (sizeof($cFail)) {
-            echo "------------- COMPILE RUN FAILURES -------------\n";
-            foreach ($cFail as $testH) {
-                echo "{$testH->tptFileName}\n";
-                if (Control::$singleMode)
-                    echo $testH->cDiffOutput;
-            }
-        }
-        if (empty($iFail)&&empty($bFail)&&empty($bFailFail)&&empty($cFail))
-            echo "---- ALL TESTS PASSED ----\n";
     }
 
 }
@@ -243,23 +223,30 @@ class PHP_Test {
     const RESULT_BUILDFAIL_PASS = 5; // we expected the compiler build to fail, and it did
     const RESULT_BUILDFAIL_FAIL = 6; // we expected the compiler build to fail, but it passed
 
-    const INTERPRETER = 0;
-    const COMPILER = 1;
+    const INTERPRETER = 1;
+    const COMPILER = 2;
+    const ANALYZER = 4;
+    
+    public $testTypes = 0;
     
     public $tptFileName;
     public $testFileName;
     public $ioutFileName; // interpreted output
     public $coutFileName; // compiled output
+    public $poutFileName; // parse output
     public $expectFileName;
     public $buildFileName;
     public $idiffFileName;
     public $cdiffFileName;
+    public $pdiffFileName;
     public $idiffOutput;
     public $cdiffOutput;
     public $buildOutput;
+    public $pdiffOutput;
     
     public $iOutput;
     public $cOutput;
+    public $pOutput;
 
     protected $expectType = 'EXPECT';
     
@@ -268,6 +255,7 @@ class PHP_Test {
     
     public $compileResult = self::RESULT_UNKNOWN;
     public $interpretResult = self::RESULT_UNKNOWN;
+    public $parseResult = self::RESULT_UNKNOWN;
     
     public function __construct($fName) {
         Control::log(2,'adding test: '.$fName);
@@ -307,34 +295,52 @@ class PHP_Test {
         if (isset($this->sectionData['EXPECTREGEX:'.$wSize]))
             $this->sectionData['EXPECTREGEX'] = $this->sectionData['EXPECTREGEX:'.$wSize];
 
-
         // verify we have code to write
         if (empty($this->sectionData['FILE']))
             Control::bomb('Invalid test template: no FILE section');
 
         if (isset($this->sectionData['EXPECTF'])) {
+            $this->testTypes |= self::COMPILER & self::INTERPRETER;
             $this->expectType = 'EXPECTF';
         }
         elseif (isset($this->sectionData['EXPECTREGEX'])) {
+            $this->testTypes |= self::COMPILER & self::INTERPRETER;
             $this->expectType = 'EXPECTREGEX';
         }
-        elseif (!isset($this->sectionData['EXPECT'])) {
+        elseif (isset($this->sectionData['EXPECTPARSE'])) {
+            $this->testTypes |= self::ANALYZER;
+            $this->expectType = 'EXPECTPARSE';
+        }
+        elseif (isset($this->sectionData['EXPECT'])) {
+            $this->testTypes |= self::COMPILER & self::INTERPRETER;
+            $this->expectType = 'EXPECT';
+        }
+        else {            
             print_r($this->sectionData);
             Control::bomb('no expect data');
         }
 
+        // XXX do skips and remove interpreter/compiler as necessary
+
         // work files
         $bName = Control::$outDir.basename($this->tptFileName, '.phpt');
-        $this->testFileName = $bName.'.php';
+        $this->testFileName = $bName.'.php';        
         $this->expectFileName = $bName.'.expect';
+        // build (compiles only)
         $this->buildFileName = $bName.'.build.out';
         $this->buildErrFileName = $bName.'.build.err';
+        // stdout
         $this->ioutFileName = $bName.'.i.out';
         $this->coutFileName = $bName.'.c.out';
+        $this->poutFileName = $bName.'.p.out';
+        // stderr
         $this->ierrFileName = $bName.'.i.err';
         $this->cerrFileName = $bName.'.c.err';
+        $this->perrFileName = $bName.'.p.err';
+        // diff
         $this->idiffFileName = $bName.'.i.diff';
         $this->cdiffFileName = $bName.'.c.diff';
+        $this->pdiffFileName = $bName.'.p.diff';
         
     }
 
@@ -356,34 +362,31 @@ class PHP_Test {
 
     protected function executeTest($type) {
 
-        if (Control::$parseOnly && !isset($this->sectionData['EXPECTPARSE'])) {
-            $this->interpretResult = PHP_Test::RESULT_SKIP;
-            $this->compileResult = PHP_Test::RESULT_SKIP;
-            return;
-        }
-
         if ($type == self::INTERPRETER) {
             
-            /*
-            if (defined('ROADSEND_PHP')) {
-                $cmd = Control::$rphpBinary.' -I '.dirname($this->tptFileName).' -f '.$this->testFileName;
-            }
-            else {
-            // XXX do zend command here
-            }
-            */
-            if (Control::$parseOnly) {
-                $cmd = Control::$rphpABinary.' --dump-ast '.$this->testFileName;
-            }
-            else {
-                $cmd = Control::$rphpBinary.' -f '.$this->testFileName;
-            }
+            $cmd = Control::$rphpBinary.' -f '.$this->testFileName;
 
             // setup output vars
             $output =& $this->iOutput;
             $outFileName =& $this->ioutFileName;
             $result =& $this->interpretResult;
             $errFileName =& $this->ierrFileName;
+            
+        }
+        elseif ($type == self::ANALYZER) {
+            
+            $passes = trim($this->sectionData['PASSES']);
+            if (empty($passes)) {
+                $passes = 'dump-ast';
+            }            
+            $cmd = Control::$rphpABinary.' --passes='.$passes.' '.$this->testFileName;
+            
+            // setup output vars
+            $output =& $this->pOutput;
+            $outFileName =& $this->poutFileName;
+            $result =& $this->parseResult;
+            $errFileName =& $this->perrFileName;
+            
         }
         else {
             // compiled executable
@@ -427,6 +430,8 @@ class PHP_Test {
         $result = $this->compareOutput($output);
         if ($type == self::INTERPRETER)
             $this->interpretResult = $result;
+        elseif ($type == self::ANALYZER)
+            $this->parseResult = $result;
         else
             $this->compileResult = $result;
         
@@ -438,9 +443,12 @@ class PHP_Test {
         $expectData = $this->getExpectData();
     
         // compare output
-        if ($expectType != 'EXPECT')
+        if ($expectType != 'EXPECT') {
             $re_expect = trim($expectData);
+        }
+        
         switch ($this->expectType) {
+            case 'EXPECTPARSE':
             case 'EXPECT':
                 if ($output != trim($expectData)) {
                     $result = self::RESULT_FAIL;
@@ -475,18 +483,7 @@ class PHP_Test {
     }
 
     protected function getExpectData() {
-        
-        if (($type == self::COMPILER) && (isset($this->sectionData['COMPILER:'.$this->expectType]))) {
-            $expectData = $this->sectionData['COMPILER:'.$this->expectType];
-        }
-        elseif (Control::$parseOnly) {
-            $expectData = $this->sectionData['EXPECTPARSE'];
-        }
-        else {
-            $expectData = $this->sectionData[$this->expectType];
-        }
-        
-        return $expectData;
+        return $this->sectionData[$this->expectType];
     }
     
     protected function writeDiff($type) {
@@ -496,6 +493,12 @@ class PHP_Test {
             Control::log(2, $cmd);
             $this->iDiffOutput = `$cmd`;
             file_put_contents($this->idiffFileName, $this->iDiffOutput);
+        }
+        elseif ($type == self::ANALYZER) {
+            $cmd = 'diff '.$this->expectFileName.' '.$this->poutFileName;
+            Control::log(2, $cmd);
+            $this->pDiffOutput = `$cmd`;
+            file_put_contents($this->pdiffFileName, $this->pDiffOutput);
         }
         else {
             $cmd = 'diff '.$this->expectFileName.' '.$this->coutFileName;
@@ -578,30 +581,56 @@ class PHP_Test {
         // write test
         $this->writeTest();
         
-        echo "INTERPRETER: ";
-        Control::flush();
+        if ($this->testTypes & self::INTERPRETER) {
+            echo "INTERPRETER: ";
+            Control::flush();
+            
+            // do interpreter test
+            $this->executeTest(self::INTERPRETER);
+    
+            if ($this->interpretResult == self::RESULT_FAIL) {
+                $this->writeDiff(self::INTERPRETER);
+            }
+    
+            switch ($this->interpretResult) {
+                case self::RESULT_PASS:
+                    Control::colorMsg(Control::GREEN,"PASS ");
+                    break;
+                case self::RESULT_FAIL:
+                    Control::colorMsg(Control::RED,"FAIL ");
+                    break;
+                case self::RESULT_SKIP:
+                    Control::colorMsg(Control::BLUE,"SKIP ");
+                    break;
+            }
+        }
         
-        // do interpreter test
-        $this->executeTest(self::INTERPRETER);
-
-        if ($this->interpretResult == self::RESULT_FAIL) {
-            $this->writeDiff(self::INTERPRETER);
-        }
-
-        switch ($this->interpretResult) {
-            case self::RESULT_PASS:
-                Control::colorMsg(Control::GREEN,"PASS ");
-                break;
-            case self::RESULT_FAIL:
-                Control::colorMsg(Control::RED,"FAIL ");
-                break;
-            case self::RESULT_SKIP:
-                Control::colorMsg(Control::BLUE,"SKIP ");
-                break;
-        }
+        if ($this->testTypes & self::ANALYZER) {
+            echo "PARSE: ";
+            Control::flush();
+            
+            // do interpreter test
+            $this->executeTest(self::ANALYZER);
+    
+            if ($this->parseResult == self::RESULT_FAIL) {
+                $this->writeDiff(self::ANALYZER);
+            }
+    
+            switch ($this->parseResult) {
+                case self::RESULT_PASS:
+                    Control::colorMsg(Control::GREEN,"PASS ");
+                    break;
+                case self::RESULT_FAIL:
+                    Control::colorMsg(Control::RED,"FAIL ");
+                    break;
+                case self::RESULT_SKIP:
+                    Control::colorMsg(Control::BLUE,"SKIP ");
+                    break;
+            }
+        }        
         
         // do compiled test
-        if (Control::$doCompiled) {
+        if ($this->testTypes & self::COMPILER) {
             echo "   BUILD: ";
             Control::flush();
             $this->doCompilerBuild();

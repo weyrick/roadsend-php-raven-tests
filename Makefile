@@ -36,9 +36,9 @@ clean-output:
 rphp: 
 	php -f ./dotest.php -- -d ./re-tests/ ./re-output
 
-# raven parse
-parse: 
-	php -f ./dotest.php -- --parseonly -d ./re-tests/ ./re-output
+# raven transforms
+transforms: 
+	php -f ./dotest.php -- -d ./re-tests/transforms/ ./re-output
 
 # zend
 zend:
